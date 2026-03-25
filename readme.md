@@ -1,4 +1,4 @@
-## Speedestimation-Tool V2
+## Speedestimation-Tool V1.0
 
 ### Cluster Mode Usage
 Cluster mode is controlled via `cluster.py`.
