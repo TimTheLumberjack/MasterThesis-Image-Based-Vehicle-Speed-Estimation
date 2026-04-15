@@ -1,172 +1,61 @@
-## Speedestimation-Tool V1.0
+# Master Thesis: Image-Based Vehicle Speed Estimation
 
-### Cluster Mode Usage
-Cluster mode is controlled via `cluster.py`.
+End-to-end training and evaluation framework for estimating ego-vehicle speed from monocular image sequences using optical flow and deep neural networks.
 
-1) Adjust `config.json` (mode, dataset type, paths, model, resolution, filters, etc.).
-2) Run `cluster.py` (it reads `config.json` by default).
+![Project Demo](Demo.gif)
 
-For `mode: "train"`, the training dataset is prepared and training starts.
-For `mode: "test"`, the test dataset is prepared and evaluation starts.
+## Scientific Motivation
+Accurate vehicle speed estimation is a core state variable in automated driving, robotics, and driver-assistance systems. While wheel odometry and CAN-based measurements are standard, vision-based speed estimation is relevant whenever sensor redundancy, degraded CAN quality, or camera-only setups are required.
 
-Example (PowerShell):
+This project studies the supervised mapping
 
-```bash
-python cluster.py
-```
+\[
+(\mathbf{I}_{t}, \mathbf{I}_{t+\Delta t}) \rightarrow v_t
+\]
 
-Optionally override the config path:
+where \(\mathbf{I}_{t}\) and \(\mathbf{I}_{t+\Delta t}\) are consecutive frames and \(v_t\) is vehicle speed in km/h.
 
-```bash
-python cluster.py --config path\to\config.json
-```
+The current implementation follows a motion-centric approach:
+- compute optical flow from frame pairs
+- encode flow as model input
+- regress speed with a CNN backbone (for example EfficientNetV2 / ResNet)
 
-### Config Options (`config.json`)
-All options are defined in `config.json`.
-Low-level performance settings (worker count, RAM cache sizes, mixed precision, disk cache)
-are auto-derived from hardware and are not intended for manual tuning in most cases.
+This decouples low-level motion extraction (optical flow) from high-level regression, enabling controlled experiments across datasets, augmentations, and model families.
 
-#### Syntax and Required Basics
-- `mode`: `"train"` or `"test"`.
-- `dataset`: `"A2D2"` or `"KITTI"` (default: `"A2D2"`).
-- Paths are strings (Windows style `C:\\...`).
-- `resolution` format is always `"WIDTHxHEIGHT"` (for example `"256x256"`).
+## Method Overview
+1. Dataset-specific preparation creates frame pairs and speed labels.
+2. Labels are stored in a compact `labels.npy` and indexed via `temp_pairs*.json`.
+3. Optical flow is computed per pair (Farneback or RAFT).
+4. Flow is fed into a regression model trained with MSE loss.
+5. Evaluation reports per-frame predictions, CSV metrics, and visualization video.
 
-#### Model Names (exact spelling)
-- `efficientnetv2-L`
-- `efficientnetv2-S`
-- `resnet18`
-- `resnet50`
-- `simple`
+## Repository Structure
+- `cluster.py`: main entrypoint (config loading, data preparation, dataset check, train/test dispatch).
+- `train_clean.py`: training pipeline, split logic, flow cache, augmentations, optimization loop.
+- `test.py`: inference pipeline, optional temporal filtering, CSV/video export.
+- `models.py`: model construction.
+- `data_checker.py`: standalone dataset integrity helper.
+- `config.json`: central runtime configuration.
 
-#### Minimal Train Example
+## Supported Datasets
+- `A2D2`
+- `KITTI`
+
+The dataset type is selected via:
+
 ```json
-{
-  "mode": "train",
-  "dataset": "A2D2",
-  "dataset_path": "C:\\path\\to\\dataset",
-  "output_path": "C:\\path\\to\\output",
-  "model": "efficientnetv2-S",
-  "learning_rate": "0.001",
-  "resolution": "256x256",
-  "batch_size": "16",
-  "epochs": 5
-}
+"dataset": "A2D2"
 ```
 
-#### Full Field Overview
+or
 
-**General**
-- `mode`: `"train"` or `"test"`.
-- `dataset`: `"A2D2"` or `"KITTI"` (default: `"A2D2"`).
+```json
+"dataset": "KITTI"
+```
 
-**Paths (Train)**
-- `dataset_path`: path to training dataset.
-  - For `dataset="A2D2"`: contains `frames/` and `canbus/`.
-  - For `dataset="KITTI"`: contains `scenes/`.
-- `output_path`: output folder for training artifacts.
+## Dataset Layout
 
-**Paths (Test)**
-- `testdata_path`: path to test dataset.
-  - For `dataset="A2D2"`: contains `frames/` and `canbus/`.
-  - For `dataset="KITTI"`: contains `scenes/`.
-- `test_output_path`: output folder for test artifacts (CSV + video).
-
-**Model / Checkpoint**
-- `model`: model name for training.
-- `test_model`: model name for test (falls back to `model`).
-- `pth_path`: path to `.pth` checkpoint file (test mode).
-
-**Training Parameters**
-- `learning_rate`: learning rate.
-- `resolution`: target resolution, for example `"256x256"`.
-- `batch_size`: batch size.
-- `epochs`: number of epochs.
-- `early_stopping_patience`: epochs without val loss improvement before stop. `0` disables early stopping.
-- `use_best_model_always`: `true`/`false`. If `true`, reload best model after each epoch.
-- `weight_decay`: L2 regularization (default `0.0`).
-- `grad_clip_norm`: max gradient norm (default `0.0` = disabled).
-- `skip_prepare`: `true`/`false`. If `true`, data preparation is skipped.
-- `cutmix_enabled`: `true`/`false`.
-- `lr_scheduler_enabled`: `true`/`false`.
-- `lr_scheduler_step`: scheduler step interval in epochs.
-- `cutmix`: CutMix probability in percent (0-100).
-- `train_val_split`: training share in percent.
-- `gutter`: percent of frame pairs to skip (0-100).
-- `temporal_gap`: number of frame pairs removed at split chunk borders (0 disables it).
-
-**Train/Val Split (sequential, validation in 3 chunks)**
-- Example with `train_val_split = 70`:
-  10% val -> 35% train -> 10% val -> 35% train -> 10% val.
-- Validation appears at start, middle, and end of sequence.
-- `temporal_gap > 0` helps reduce temporal leakage.
-
-**Training Augmentations (pre-flow)**
-- `augmentations_enabled`
-- `augmentation_epoch_skip_interval`
-- `aug_flip_prob`
-- `aug_brightness_prob`, `aug_brightness_max`
-- `aug_contrast_prob`, `aug_contrast_max`
-- `aug_darkness_prob`, `aug_darkness_max`
-- `aug_noise_prob`, `aug_noise_std`
-
-**Optical Flow**
-- `use_RAFT_for_flow`: `true` uses RAFT (CUDA), `false` uses Farneback.
-- `farneback_levels`: Farneback pyramid levels (default `3`).
-- `farneback_winsize`: Farneback window size (default `15`).
-
-RAFT notes:
-- Requires `torch` + `torchvision` with optical flow support.
-- Weights are loaded automatically on first use.
-- CUDA-capable GPU is recommended.
-
-**Dataset Check (optional)**
-- `max_frame_dt_ms`: max allowed time delta between frame1 and frame2 (A2D2 only).
-- `max_drop_ratio`: max fraction of removed pairs (0.0-1.0).
-- `dataset_check_log_every`: logging interval.
-- `dataset_check_debug_samples`: number of debug samples.
-- `dataset_check_lightweight`: `true` skips image reads.
-- `dataset_check_workers`: worker count (`0` or empty = auto).
-
-**Test Filter (test mode only)**
-- `filter_enabled`: `true`/`false`.
-- `filter_type`: `"ema"` or `"kalman"`.
-
-EMA:
-- `ema_alpha`: smoothing factor in `[0,1]`.
-- `ema_window`: optional window `N`; if set, alpha is derived as `2/(N+1)`.
-Use either `ema_alpha` or `ema_window`, not both.
-
-Kalman:
-- `kalman_process_variance`
-- `kalman_measurement_variance`
-- `kalman_estimate_variance`
-- `kalman_initial_estimate` (optional)
-
-### Test CSV Output
-The CSV file includes:
-- `index`, `frame`, `ground_truth`, `prediction`, `prediction_raw`, `diff`, `mse`
-
-`prediction` is the filtered value (if filter enabled), `prediction_raw` is unfiltered.
-
-### Dataset Check Behavior
-After preparation, an automatic dataset check runs.
-Pairs may be removed if:
-- frames are missing or unreadable
-- labels are missing or invalid
-- for A2D2: timestamps are missing
-- for A2D2: `frame_dt` exceeds `max_frame_dt_ms`
-- for A2D2: no CAN-bus value exists in frame interval
-
-The check aborts if removed pairs exceed `max_drop_ratio`.
-A marker file is stored so unchanged inputs can skip re-check.
-
-For `dataset="KITTI"`, checks focus on frame/label consistency and readability,
-without A2D2 timestamp/CAN-bus rules.
-
-### Dataset Setup (A2D2)
-For A2D2, structure the dataset as:
-
+### A2D2
 ```text
 your_dataset/
   frames/
@@ -179,12 +68,10 @@ your_dataset/
     canbus_000002.json
 ```
 
-### Dataset Setup (KITTI)
-For KITTI, `dataset_path` must contain `scenes/`.
-Under `scenes/`, one or many scene roots are supported.
-A scene root is detected when both folders exist:
+### KITTI
+`dataset_path` must contain `scenes/`. A scene root is detected when both directories exist:
 - `image_02/data` (PNG frames)
-- `oxts/data` (TXT OXTS files)
+- `oxts/data` (TXT files)
 
 Example:
 
@@ -204,6 +91,86 @@ your_dataset/
               0000000001.txt
 ```
 
-For each pair `(frame_i, frame_{i+1})`, speed comes from `frame_i`:
-- column 9 (index 8), whitespace-separated, in OXTS TXT
-- converted from m/s to km/h via `* 3.6`
+KITTI label extraction in this codebase:
+- pair: `(frame_i, frame_{i+1})`
+- label source: `frame_i` OXTS file
+- speed: column 9 (index 8), whitespace-separated
+- unit conversion: `km/h = m/s * 3.6`
+
+## Quick Start
+
+### 1) Configure
+Edit `config.json` (mode, dataset, paths, model, resolution, etc.).
+
+Minimal train example:
+
+```json
+{
+  "mode": "train",
+  "dataset": "KITTI",
+  "dataset_path": "C:\\path\\to\\dataset",
+  "output_path": "C:\\path\\to\\output",
+  "model": "efficientnetv2-S",
+  "learning_rate": "0.0001",
+  "resolution": "256x256",
+  "batch_size": "8",
+  "epochs": 15
+}
+```
+
+### 2) Run
+```bash
+python cluster.py
+```
+
+Optional config override:
+```bash
+python cluster.py --config path\to\config.json
+```
+
+## Key Configuration Fields
+- `mode`: `train` or `test`
+- `dataset`: `A2D2` or `KITTI`
+- `dataset_path`, `testdata_path`
+- `output_path`, `test_output_path`
+- `model`, `test_model`, `pth_path`
+- `resolution`, `batch_size`, `epochs`, `learning_rate`
+- `train_val_split`, `temporal_gap`, `gutter`
+- `use_RAFT_for_flow`, `use_rgb_mode`
+- `augmentations_enabled`, `cutmix_enabled`
+- test-time filtering: `filter_enabled`, `filter_type`, `ema_*`, `kalman_*`
+
+## Dataset Check
+After preparation, an automatic dataset check validates frame/label consistency.
+- removes invalid pairs
+- aborts if removed ratio exceeds `max_drop_ratio`
+- caches verification state via marker files
+
+A2D2 additionally checks timestamp/CAN synchronization constraints.
+
+## Outputs
+
+### Training
+- `best_model.pth`
+- `best_checkpoint.pth`
+- `training_log.csv`
+- `epoch_training_log.csv`
+- `training_loss.png`
+- `training_loss_epochs.png`
+- optional: `best_val_scatter.png`
+
+### Testing
+- `test_results.csv` (`ground_truth`, filtered and raw prediction, error metrics)
+- `test_output.mp4` with prediction overlay
+
+## Available Models
+- `efficientnetv2-L`
+- `efficientnetv2-S`
+- `resnet18`
+- `resnet50`
+- `simple`
+
+## Notes
+- RAFT requires CUDA-enabled PyTorch/TorchVision optical-flow support.
+- For small datasets, prefer moderate `batch_size` and conservative `temporal_gap`.
+- The pipeline is designed for reproducible experiments and easy extension to additional datasets.
