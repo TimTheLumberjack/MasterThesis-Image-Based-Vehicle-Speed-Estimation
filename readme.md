@@ -9,11 +9,11 @@ Accurate vehicle speed estimation is a core state variable in automated driving,
 
 This project studies the supervised mapping
 
-\[
+```math
 (\mathbf{I}_{t}, \mathbf{I}_{t+\Delta t}) \rightarrow v_t
-\]
+```
 
-where \(\mathbf{I}_{t}\) and \(\mathbf{I}_{t+\Delta t}\) are consecutive frames and \(v_t\) is vehicle speed in km/h.
+where `I_t` and `I_{t+\Delta t}` are consecutive frames and `v_t` is vehicle speed in km/h.
 
 The current implementation follows a motion-centric approach:
 - compute optical flow from frame pairs
