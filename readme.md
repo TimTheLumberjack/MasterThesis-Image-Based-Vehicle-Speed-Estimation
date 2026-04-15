@@ -4,6 +4,9 @@ End-to-end training and evaluation framework for estimating ego-vehicle speed fr
 
 ![Project Demo](Demo.gif)
 
+## Academic Context
+This project was developed as part of a Master's thesis at the [Institute of Mechatronic Systems (IMES), Leibniz University Hannover](https://www.imes.uni-hannover.de/), in cooperation with Hendrik Schäfke.
+
 ## Scientific Motivation
 Accurate vehicle speed estimation is a core state variable in automated driving, robotics, and driver-assistance systems. While wheel odometry and CAN-based measurements are standard, vision-based speed estimation is relevant whenever sensor redundancy, degraded CAN quality, or camera-only setups are required.
 
